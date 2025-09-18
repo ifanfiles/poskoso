@@ -1,0 +1,68 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+  <meta charset="UTF-8">
+  <title>Peta Cuaca Multi-Overlay</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"/>
+  <style>
+    body { margin:0; }
+    #map { height: 100vh; width: 100%; }
+  </style>
+</head>
+<body>
+  <div id="map"></div>
+  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+  <script>
+    // Inisialisasi peta
+    const map = L.map('map').setView([-7.5, 110.2], 6);
+
+    // --- Peta Dasar ---
+    const osm = L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+      attribution: '&copy; OpenStreetMap contributors'
+    }).addTo(map);
+
+    const cartoLight = L.tileLayer('https://cartodb-basemaps-a.global.ssl.fastly.net/light_all/{z}/{x}/{y}{r}.png', {
+      attribution: '&copy; Carto'
+    });
+
+    // --- Overlay Cuaca ---
+    // RainViewer Radar (ambil waktu realtime terakhir)
+    const radar = L.tileLayer('https://tilecache.rainviewer.com/v2/radar/0/256/{z}/{x}/{y}/2/1_1.png', {
+      attribution: 'RainViewer.com',
+      opacity: 0.6
+    });
+
+    // OpenWeatherMap Temperature (ganti YOUR_API_KEY dengan key asli)
+    const temp = L.tileLayer('https://tile.openweathermap.org/map/temp_new/{z}/{x}/{y}.png?appid=YOUR_API_KEY', {
+      attribution: '© OpenWeatherMap',
+      opacity: 0.5
+    });
+
+    // NASA GIBS True Color (tanggal hari ini, maxZoom 9)
+    const today = new Date().toISOString().split('T')[0]; // YYYY-MM-DD
+    const nasaTrueColor = L.tileLayer(
+      `https://gibs.earthdata.nasa.gov/wmts/epsg3857/best/MODIS_Terra_CorrectedReflectance_TrueColor/default/${today}/GoogleMapsCompatible_Level9/{z}/{y}/{x}.jpg`,
+      {
+        attribution: 'NASA EOSDIS GIBS',
+        maxZoom: 9,
+        opacity: 0.7
+      }
+    );
+
+    // --- Layer Control ---
+    const baseMaps = {
+      "OSM": osm,
+      "Carto Light": cartoLight
+    };
+
+    const overlayMaps = {
+      "Radar Hujan (RainViewer)": radar,
+      "Suhu (OpenWeatherMap)": temp,
+      "Satelit NASA (True Color)": nasaTrueColor
+    };
+
+    L.control.layers(baseMaps, overlayMaps).addTo(map);
+  </script>
+</body>
+</html>
