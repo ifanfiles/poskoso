@@ -1,71 +1,311 @@
-<!DOCTYPE html>
+<!doctype html>
 <html lang="id">
 <head>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Live Harga Tokocrypto (Spot)</title>
+  <meta charset="utf-8" />
+  <title>Tokocrypto-style Live Table + Chart (Binance)</title>
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
   <style>
-    body { font-family: Arial, sans-serif; background: #f8f9fa; color: #333; }
-    h2 { text-align: center; margin-top: 20px; }
-    table { width: 90%; margin: 20px auto; border-collapse: collapse; background: #fff; box-shadow: 0 0 10px rgba(0,0,0,0.1); }
-    th, td { border: 1px solid #ddd; padding: 10px; text-align: center; }
-    th { background: #4CAF50; color: white; }
-    tr:hover { background: #f1f1f1; }
-    .green { color: green; font-weight: bold; }
-    .red { color: red; font-weight: bold; }
+    :root {
+      --bg: #0f1724; --card: #0b1220; --muted:#9fb0c8; --accent:#2dd4bf; --danger:#ff6b6b;
+      --table-head:#15803d;
+    }
+    body { margin:0; font-family: Inter, ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue"; background:var(--bg); color:#e6eef8; }
+    .wrap { max-width:1200px; margin:24px auto; padding:18px; }
+    h1 { margin:0 0 10px 0; font-size:20px; color:var(--accent) }
+    .controls { display:flex; gap:8px; align-items:center; flex-wrap:wrap; margin:12px 0 18px 0; }
+    input[type=text]{ padding:10px 12px; border-radius:8px; border:1px solid #113045; background:#071122; color:#e6eef8; min-width:340px;}
+    button{ padding:10px 12px; border-radius:8px; border:0; cursor:pointer; background:var(--accent); color:#073642; font-weight:700 }
+    small { color:var(--muted) }
+
+    table { width:100%; border-collapse:collapse; margin-top:12px; background:#071022; border-radius:8px; overflow:hidden; }
+    th, td { padding:10px 12px; text-align:left; font-size:13px; border-bottom:1px solid rgba(255,255,255,0.03) }
+    th { background:var(--table-head); color:#fff; font-weight:700 }
+    tr:hover td { background: rgba(255,255,255,0.02) }
+    .green{ color:#9be6b4; font-weight:700 } .red{ color:#ff9a9a; font-weight:700 }
+    .small { font-size:12px; color:var(--muted) }
+
+    .layout { display:grid; grid-template-columns: 1fr 520px; gap:16px; margin-top:18px; }
+    .card { background:var(--card); padding:12px; border-radius:8px; box-shadow: 0 6px 20px rgba(2,6,23,0.6) }
+    canvas { width:100% !important; height:320px !important; background:#081020; border-radius:6px; display:block }
+
+    .options { display:flex; gap:8px; align-items:center; margin-bottom:8px; flex-wrap:wrap }
+    select { padding:8px 10px; background:#071022; color:#e6eef8; border-radius:6px; border:1px solid #123; }
+    .note { color:var(--muted); font-size:13px; margin-top:8px }
+    footer { margin-top:14px; color:var(--muted); font-size:13px }
+    @media(max-width:980px){ .layout{ grid-template-columns: 1fr; } canvas{height:260px!important} input[type=text]{ min-width:180px } }
   </style>
 </head>
 <body>
-  <h2>📊 Live Harga Tokocrypto (Spot)</h2>
-  <table id="cryptoTable">
-    <thead>
-      <tr>
-        <th>Pair</th>
-        <th>Harga Terakhir (USDT)</th>
-        <th>Perubahan 24 Jam (%)</th>
-        <th>Volume 24 Jam</th>
-      </tr>
-    </thead>
-    <tbody></tbody>
-  </table>
+  <div class="wrap">
+    <h1>📈 Live Table & Chart — pilih pair sendiri (Binance API)</h1>
+    <div class="controls">
+      <input id="pairsInput" placeholder="Masukkan pair, contoh: BTCUSDT,ETHUSDT,TOWNUSDT" />
+      <button id="saveBtn">Simpan & Load</button>
+      <button id="refreshBtn" title="Refresh data tabel sekarang">Refresh</button>
+      <div style="margin-left:auto" class="small">Pairs disimpan di browser (localStorage)</div>
+    </div>
 
-  <script>
-    const tableBody = document.querySelector("#cryptoTable tbody");
+    <div class="layout">
+      <!-- LEFT: table -->
+      <div class="card">
+        <div style="display:flex;justify-content:space-between;align-items:center">
+          <div><strong>Daftar Pair</strong><div class="small">Klik row untuk tampilkan chart</div></div>
+          <div class="small">Auto-refresh setiap <span id="intervalLabel">5s</span></div>
+        </div>
 
-    async function loadData() {
-      try {
-        const res = await fetch("https://api.binance.com/api/v3/ticker/24hr");
-        const data = await res.json();
-
-        const populer = ["BTCUSDT", "ETHUSDT", "BNBUSDT", "SOLUSDT", "DOGEUSDT", "TONUSDT", "TOWNUSDT"];
-        const filtered = data.filter(x => populer.includes(x.symbol));
-
-        tableBody.innerHTML = "";
-
-        filtered.forEach(item => {
-          const price = parseFloat(item.lastPrice).toFixed(4);
-          const change = parseFloat(item.priceChangePercent).toFixed(2);
-          const volume = parseFloat(item.volume).toFixed(2);
-          const color = change >= 0 ? "green" : "red";
-
-          const row = `
+        <table id="mainTable">
+          <thead>
             <tr>
-              <td>${item.symbol}</td>
-              <td>${price}</td>
-              <td class="${color}">${change}%</td>
-              <td>${volume}</td>
+              <th>Pair</th>
+              <th>Harga</th>
+              <th>24h %</th>
+              <th>24h Vol</th>
+              <th>Bid</th>
+              <th>Ask</th>
             </tr>
-          `;
-          tableBody.innerHTML += row;
-        });
+          </thead>
+          <tbody></tbody>
+        </table>
+        <div class="note">Tip: gunakan pair format exchange (contoh BTCUSDT). Jika pair tak ditemukan, akan di-skip.</div>
+      </div>
 
-      } catch (err) {
-        console.error("Gagal ambil data:", err);
-      }
+      <!-- RIGHT: chart -->
+      <div class="card">
+        <div class="options">
+          <div style="flex:1">
+            <strong id="chartTitle">Pilih pair dari tabel</strong>
+            <div class="small" id="chartSubtitle"></div>
+          </div>
+          <select id="intervalSelect">
+            <option value="1m">1m</option>
+            <option value="3m">3m</option>
+            <option value="5m" selected>5m</option>
+            <option value="15m">15m</option>
+            <option value="1h">1h</option>
+            <option value="4h">4h</option>
+            <option value="1d">1d</option>
+          </select>
+          <button id="loadChartBtn">Load Chart</button>
+        </div>
+        <canvas id="priceCanvas"></canvas>
+        <div class="note" id="chartNote">Chart candlestick + volume (data dari Binance API). Klik Load Chart setelah pilih pair / interval.</div>
+      </div>
+    </div>
+
+    <footer>Built for GitHub Pages • Data from Binance public REST API • No API key required</footer>
+  </div>
+
+<script>
+/* ======= CONFIG ======= */
+const API_BASE = 'https://api.binance.com';
+const DEFAULT_PAIRS = ['BTCUSDT','ETHUSDT','BNBUSDT','SOLUSDT','DOGEUSDT'];
+const REFRESH_MS = 5000; // tabel auto-refresh
+/* ====================== */
+
+const pairsInput = document.getElementById('pairsInput');
+const saveBtn = document.getElementById('saveBtn');
+const refreshBtn = document.getElementById('refreshBtn');
+const intervalLabel = document.getElementById('intervalLabel');
+const tbody = document.querySelector('#mainTable tbody');
+const chartTitle = document.getElementById('chartTitle');
+const chartSubtitle = document.getElementById('chartSubtitle');
+const intervalSelect = document.getElementById('intervalSelect');
+const loadChartBtn = document.getElementById('loadChartBtn');
+const chartNote = document.getElementById('chartNote');
+
+let pairs = [];
+let autoTimer = null;
+let activeSymbol = null;
+
+/* Chart.js global */
+let chart = null;
+
+/* util */
+function setStatus(s){ /* no-op for now */ }
+function fmt(n){ if(n === null || n === undefined) return '-'; if(Math.abs(n) >= 1e9) return (n/1e9).toFixed(2)+'B'; if(Math.abs(n) >= 1e6) return (n/1e6).toFixed(2)+'M'; if(Math.abs(n) >= 1e3) return (n/1e3).toFixed(2)+'k'; return Number(n).toLocaleString(); }
+
+function loadStoredPairs(){
+  const stored = localStorage.getItem('pairs_list_v1');
+  if(stored){
+    pairs = stored.split(',').map(s=>s.trim()).filter(Boolean);
+  } else {
+    pairs = DEFAULT_PAIRS.slice();
+    localStorage.setItem('pairs_list_v1', pairs.join(','));
+  }
+  pairsInput.value = pairs.join(',');
+}
+function savePairsFromInput(){
+  const raw = pairsInput.value || '';
+  pairs = raw.split(',').map(s=>s.trim().toUpperCase()).filter(Boolean);
+  if(pairs.length === 0) pairs = DEFAULT_PAIRS.slice();
+  localStorage.setItem('pairs_list_v1', pairs.join(','));
+  loadTable(); // refresh
+}
+
+/* fetch single ticker */
+async function fetchTicker(symbol){
+  try{
+    const res = await fetch(`${API_BASE}/api/v3/ticker/24hr?symbol=${symbol}`);
+    if(!res.ok) throw new Error('not found');
+    return await res.json();
+  }catch(e){
+    return null;
+  }
+}
+/* fetch orderbook top 1 */
+async function fetchDepth(symbol){
+  try{
+    const res = await fetch(`${API_BASE}/api/v3/depth?symbol=${symbol}&limit=5`);
+    if(!res.ok) return null;
+    return await res.json();
+  }catch(e){ return null; }
+}
+
+/* load table data sequentially to avoid spamming API too fast */
+async function loadTable(){
+  tbody.innerHTML = '';
+  for(let i=0;i<pairs.length;i++){
+    const sym = pairs[i];
+    // show placeholder row
+    const tr = document.createElement('tr');
+    tr.innerHTML = `<td>${sym}</td><td colspan="5" class="small">loading...</td>`;
+    tbody.appendChild(tr);
+
+    // fetch ticker
+    const tick = await fetchTicker(sym);
+    if(!tick){
+      tr.innerHTML = `<td>${sym}</td><td colspan="5" class="small red">Pair tidak ditemukan / unavailable</td>`;
+      continue;
     }
+    // depth
+    const dp = await fetchDepth(sym);
+    const bid = dp && dp.bids && dp.bids[0] ? parseFloat(dp.bids[0][0]).toFixed(6) : '-';
+    const ask = dp && dp.asks && dp.asks[0] ? parseFloat(dp.asks[0][0]).toFixed(6) : '-';
 
-    loadData();
-    setInterval(loadData, 5000);
-  </script>
+    const last = parseFloat(tick.lastPrice);
+    const change = parseFloat(tick.priceChangePercent);
+    const vol = parseFloat(tick.volume);
+
+    tr.innerHTML = `
+      <td style="cursor:pointer" class="clickable">${sym}</td>
+      <td>$${last.toFixed(6)}</td>
+      <td class="${change>=0 ? 'green' : 'red'}">${change.toFixed(2)}%</td>
+      <td>${fmt(vol)}</td>
+      <td>${bid}</td>
+      <td>${ask}</td>
+    `;
+    // attach click handler to row
+    tr.querySelector('td.clickable').addEventListener('click', ()=> {
+      activeSymbol = sym;
+      chartTitle.textContent = sym;
+      chartSubtitle.textContent = `Last: $${last.toFixed(6)} • 24h vol: ${fmt(vol)} • change: ${change.toFixed(2)}%`;
+      loadChart(sym, intervalSelect.value);
+    });
+    // polite delay a bit
+    await new Promise(r=>setTimeout(r, 200));
+  }
+}
+
+/* fetch klines, convert to OHLC arrays for Chart.js */
+async function fetchKlines(symbol, interval='5m', limit=200){
+  const url = `${API_BASE}/api/v3/klines?symbol=${symbol}&interval=${interval}&limit=${limit}`;
+  const res = await fetch(url);
+  if(!res.ok) throw new Error('failed klines');
+  const arr = await res.json();
+  // each item: [ openTime, open, high, low, close, volume, closeTime, ... ]
+  return arr.map(i=>({
+    t: new Date(i[0]),
+    open: parseFloat(i[1]),
+    high: parseFloat(i[2]),
+    low: parseFloat(i[3]),
+    close: parseFloat(i[4]),
+    vol: parseFloat(i[5])
+  }));
+}
+
+/* build chart (candlestick + volume) using Chart.js financial style (custom) */
+async function loadChart(symbol, interval){
+  chartNote.textContent = 'Loading chart...';
+  try{
+    const data = await fetchKlines(symbol, interval, 200);
+    const labels = data.map(d=>d.t.toLocaleString());
+    const closes = data.map(d=>d.close);
+    const volumes = data.map(d=>d.vol);
+
+    // destroy old chart
+    if(chart) { chart.destroy(); chart = null; }
+
+    // Create a combined line (price) + bar (volume) chart
+    const ctx = document.getElementById('priceCanvas').getContext('2d');
+    chart = new Chart(ctx, {
+      type: 'bar',
+      data: {
+        labels,
+        datasets: [
+          {
+            type: 'line',
+            label: `${symbol} Close`,
+            data: closes,
+            borderColor: '#2dd4bf',
+            backgroundColor: 'rgba(45,212,191,0.06)',
+            yAxisID: 'y',
+            tension: 0.2,
+            pointRadius: 0
+          },
+          {
+            type: 'bar',
+            label: 'Volume',
+            data: volumes,
+            yAxisID: 'y1',
+            backgroundColor: 'rgba(99,102,241,0.6)'
+          }
+        ]
+      },
+      options: {
+        maintainAspectRatio:false,
+        interaction: { mode:'index', intersect:false },
+        scales: {
+          x: { ticks: { color:'#cbd5e1' } },
+          y: { position:'left', grid: { color:'rgba(255,255,255,0.04)' }, ticks:{ color:'#cbd5e1' } },
+          y1: { position:'right', grid: { drawOnChartArea:false }, ticks:{ color:'#cbd5e1' } }
+        },
+        plugins: {
+          legend:{ labels:{ color:'#e2e8f0' } },
+          tooltip:{ enabled:true }
+        }
+      }
+    });
+
+    chartNote.textContent = `Interval ${interval} — ${data.length} bars loaded (live from Binance)`;
+  }catch(err){
+    chartNote.textContent = 'Gagal load chart: '+err.message;
+  }
+}
+
+/* auto-refresh */
+function startAutoRefresh(){
+  if(autoTimer) clearInterval(autoTimer);
+  autoTimer = setInterval(()=> loadTable(), REFRESH_MS);
+  intervalLabel.textContent = (REFRESH_MS/1000)+'s';
+}
+
+/* wire events */
+saveBtn.addEventListener('click', ()=> {
+  savePairsFromInput();
+  startAutoRefresh();
+});
+refreshBtn.addEventListener('click', ()=> loadTable());
+loadChartBtn.addEventListener('click', ()=> {
+  if(!activeSymbol) return alert('Klik salah satu pair di tabel terlebih dahulu.');
+  loadChart(activeSymbol, intervalSelect.value);
+});
+
+/* init */
+loadStoredPairs();
+startAutoRefresh();
+loadTable();
+
+</script>
 </body>
 </html>
