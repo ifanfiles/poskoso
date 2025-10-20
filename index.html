@@ -1,266 +1,72 @@
-<!doctype html>
+<!DOCTYPE html>
 <html lang="id">
 <head>
-  <meta charset="utf-8" />
-  <title>Scalping Screener (Spot) - CoinGecko</title>
-  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Tokocrypto Live Data</title>
   <style>
-    body { font-family: Inter, system-ui, -apple-system, Roboto, "Helvetica Neue", Arial; background:#0b1220; color:#e6eef8; margin:0; padding:20px; }
-    h1 { margin:0 0 12px 0; font-size:20px; }
-    p.note { color:#9fb0c8; margin:6px 0 18px 0; }
-    .controls { display:flex; gap:8px; align-items:center; margin-bottom:12px; flex-wrap:wrap; }
-    select,input,button { padding:8px 10px; border-radius:6px; border:1px solid #203045; background:#0f1a2a; color:#e6eef8; }
-    table { width:100%; border-collapse:collapse; margin-top:12px; }
-    th,td { padding:8px 10px; border-bottom:1px solid #142235; text-align:left; font-size:13px; }
-    th { background:#07111a; position:sticky; top:0; z-index:2; }
-    tr:hover td { background:#07111a; }
-    .sig-good { color:#8be38b; font-weight:600 }
-    .sig-bad { color:#ff9a9a; font-weight:600 }
-    .small { font-size:12px; color:#9fb0c8 }
-    .spinner { display:inline-block; width:14px; height:14px; border-radius:50%; border:2px solid transparent; border-top-color:#5ec6ff; animation:spin 1s linear infinite; vertical-align:middle; margin-left:6px }
-    @keyframes spin { to { transform:rotate(360deg) } }
-    footer { margin-top:18px; color:#7393a7; font-size:13px }
+    body { font-family: Arial, sans-serif; background: #f5f5f5; color: #333; }
+    h2 { text-align: center; }
+    table { width: 90%; margin: 20px auto; border-collapse: collapse; background: #fff; }
+    th, td { border: 1px solid #ddd; padding: 10px; text-align: center; }
+    th { background: #4CAF50; color: white; }
+    tr:hover { background: #f1f1f1; }
+    .green { color: green; font-weight: bold; }
+    .red { color: red; font-weight: bold; }
   </style>
 </head>
 <body>
-  <h1>Scalping Screener (Spot) — CoinGecko (Client-side)</h1>
-  <p class="note">Screener mengambil data CoinGecko (market & intraday). Gunakan untuk screening. Sesuaikan <b>Top N</b> dan <b>threshold</b>. CoinGecko rate limit berlaku.</p>
-
-  <div class="controls">
-    <label>Top coins:
-      <select id="topN">
-        <option>10</option><option selected>20</option><option>30</option>
-      </select>
-    </label>
-
-    <label>Vol threshold (24h volume USD ≥):
-      <input id="volThresh" type="number" value="500000" />
-    </label>
-
-    <label>Volatility min (std returns):
-      <input id="volMin" type="number" step="0.0001" value="0.002" />
-    </label>
-
-    <button id="runBtn">Run Screener</button>
-    <div id="status" class="small"></div>
-  </div>
-
-  <table id="tbl">
+  <h2>📈 Live Harga Tokocrypto (Spot)</h2>
+  <table id="cryptoTable">
     <thead>
       <tr>
-        <th>Coin</th>
-        <th>Price (USD)</th>
-        <th>24h Vol (USD)</th>
-        <th>24h %</th>
-        <th>EMA9</th>
-        <th>EMA21</th>
-        <th>RSI14</th>
-        <th>Volatility</th>
-        <th>Signal</th>
+        <th>Pair</th>
+        <th>Harga Terakhir (USDT)</th>
+        <th>Perubahan 24 Jam (%)</th>
+        <th>Volume 24 Jam</th>
       </tr>
     </thead>
     <tbody></tbody>
   </table>
 
-  <footer>
-    Tips: pakai Top N kecil (10-30). Untuk scalping cari: EMA9 > EMA21 + RSI antara 35–70 + volume cukup + volatilitas sedang.
-  </footer>
+  <script>
+    const tableBody = document.querySelector("#cryptoTable tbody");
 
-<script>
-/*
-  Scalping Screener (client-side)
-  - Uses CoinGecko public API (no key)
-  - For each coin: fetch market_chart (1 day) to compute EMA/RSI/volatility
-  - Simple signal: EMA9 > EMA21 && vol24h >= threshold && volatility >= volMin
-  Note: CoinGecko rate-limits; keep Top N small.
-*/
+    async function loadData() {
+      try {
+        const res = await fetch("https://www.tokocrypto.com/api/v1/ticker/24hr");
+        const data = await res.json();
 
-const apiBase = 'https://api.coingecko.com/api/v3';
-const runBtn = document.getElementById('runBtn');
-const statusEl = document.getElementById('status');
-const tbody = document.querySelector('#tbl tbody');
+        // ambil hanya beberapa koin populer (biar tidak terlalu panjang)
+        const populer = ["BTCUSDT", "ETHUSDT", "BNBUSDT", "SOLUSDT", "DOGEUSDT", "TOWNSUSDT"];
+        const filtered = data.filter(x => populer.includes(x.symbol));
 
-function sleep(ms){ return new Promise(r=>setTimeout(r, ms)); }
+        tableBody.innerHTML = ""; // kosongkan dulu
 
-function sma(values, period){
-  if(values.length < period) return null;
-  const slice = values.slice(-period);
-  return slice.reduce((a,b)=>a+b, 0)/period;
-}
-function ema(values, period){
-  // simple EMA, requires at least period samples; return last EMA value
-  if(values.length < period) return null;
-  const k = 2/(period+1);
-  // initialize with SMA of first period
-  let emaPrev = sma(values.slice(0, period), period);
-  for(let i = period; i < values.length; i++){
-    emaPrev = values[i]*k + emaPrev*(1-k);
-  }
-  return emaPrev;
-}
-function rsi(values, period=14){
-  // values = price series; compute RSI of last point using period
-  if(values.length < period+1) return null;
-  let gains = 0, losses = 0;
-  for(let i = values.length-period; i < values.length; i++){
-    const diff = values[i] - values[i-1];
-    if(diff>0) gains += diff; else losses += Math.abs(diff);
-  }
-  const avgGain = gains/period;
-  const avgLoss = losses/period;
-  if(avgLoss === 0) return 100;
-  const rs = avgGain/avgLoss;
-  return 100 - (100/(1+rs));
-}
-function stdReturns(values){
-  // compute log returns std dev for volatility
-  if(values.length < 2) return 0;
-  const rets = [];
-  for(let i=1;i<values.length;i++){
-    rets.push(Math.log(values[i]/values[i-1]));
-  }
-  const mean = rets.reduce((a,b)=>a+b,0)/rets.length;
-  const variance = rets.reduce((a,b)=>a+Math.pow(b-mean,2),0)/rets.length;
-  return Math.sqrt(variance);
-}
+        filtered.forEach(item => {
+          const price = parseFloat(item.lastPrice).toFixed(4);
+          const change = parseFloat(item.priceChangePercent).toFixed(2);
+          const volume = parseFloat(item.volume).toFixed(2);
+          const color = change >= 0 ? "green" : "red";
 
-async function fetchTopCoins(n){
-  const url = `${apiBase}/coins/markets?vs_currency=usd&order=market_cap_desc&per_page=${n}&page=1&sparkline=false`;
-  const res = await fetch(url);
-  return res.json();
-}
+          const row = `
+            <tr>
+              <td>${item.symbol}</td>
+              <td>${price}</td>
+              <td class="${color}">${change}%</td>
+              <td>${volume}</td>
+            </tr>
+          `;
+          tableBody.innerHTML += row;
+        });
 
-async function fetchMarketChart(id, days='1'){
-  // returns [ [timestamp, price], ... ]
-  const url = `${apiBase}/coins/${id}/market_chart?vs_currency=usd&days=${days}&interval=minutely`;
-  const res = await fetch(url);
-  return res.json();
-}
-
-async function analyze(){
-  tbody.innerHTML = '';
-  const topN = Number(document.getElementById('topN').value);
-  const volThreshold = Number(document.getElementById('volThresh').value);
-  const volMin = Number(document.getElementById('volMin').value);
-
-  statusEl.innerHTML = 'Fetching top coins <span class="spinner"></span>';
-  let coins;
-  try {
-    coins = await fetchTopCoins(topN);
-  } catch(e){
-    statusEl.textContent = 'Error fetching top coins: '+e;
-    return;
-  }
-
-  statusEl.innerHTML = `Processing ${coins.length} coins...`;
-  // process sequentially to ease rate limits
-  for(let i=0;i<coins.length;i++){
-    const c = coins[i];
-    statusEl.textContent = `(${i+1}/${coins.length}) ${c.id} ...`;
-    // skip low volume coins quickly
-    if((c.total_volume || 0) < volThreshold){
-      appendRow(c, null, {signal:'Skip (low volume)', color:'small'});
-      await sleep(350); // polite pause
-      continue;
-    }
-    // fetch price history
-    let hist;
-    try {
-      hist = await fetchMarketChart(c.id, '1'); // 1 day, per minute
-    } catch(e){
-      appendRow(c, null, {signal:'Error hist', color:'small'});
-      await sleep(400);
-      continue;
-    }
-
-    // get price array (take recent N points)
-    // hist.prices = [[ts, price], ...]
-    const prices = (hist.prices || []).map(p=>p[1]);
-    // we pick last 200 points to compute EMAs/RSI (if available)
-    const points = prices.slice(-200);
-    if(points.length < 30){
-      appendRow(c, null, {signal:'Not enough data', color:'small'});
-      await sleep(350);
-      continue;
-    }
-
-    const ema9 = ema(points, 9);
-    const ema21 = ema(points, 21);
-    const rsi14 = rsi(points, 14);
-    const vol = c.total_volume || 0;
-    const volUSD = vol;
-    const volatility = stdReturns(points);
-
-    // simple signal logic:
-    // Candidate if EMA9 > EMA21, vol >= threshold, volatility >= volMin, RSI between 30 and 70
-    let signal = 'No';
-    let sigClass = 'sig-bad';
-    if(ema9 && ema21 && ema9 > ema21 && volUSD >= volThreshold && volatility >= volMin && rsi14 >= 30 && rsi14 <= 75) {
-      signal = 'Scalp Candidate';
-      sigClass = 'sig-good';
-    } else {
-      // check potential buy-the-dip: EMA9 < EMA21 and RSI < 35 -> possible mean reversion
-      if(ema9 && ema21 && ema9 < ema21 && rsi14 <= 35 && volatility >= volMin) {
-        signal = 'Dip / Rebound watch';
-        sigClass = 'small';
-      } else {
-        signal = 'No';
-        sigClass = 'small';
+      } catch (err) {
+        console.error("Gagal ambil data:", err);
       }
     }
 
-    appendRow(c, {ema9, ema21, rsi14, volatility, volUSD}, {signal, sigClass});
-    await sleep(500); // polite sleep to avoid rate limit
-  }
-  statusEl.textContent = 'Done';
-}
-
-function fmt(n){
-  if(n === null || n === undefined) return '-';
-  if(Math.abs(n) >= 1e9) return (n/1e9).toFixed(2)+'B';
-  if(Math.abs(n) >= 1e6) return (n/1e6).toFixed(2)+'M';
-  if(Math.abs(n) >= 1e3) return (n/1e3).toFixed(2)+'k';
-  return n.toFixed(6).replace(/\.?0+$/,'');
-}
-
-function appendRow(coin, metrics, opts){
-  const tr = document.createElement('tr');
-  const price = coin.current_price ?? '-';
-  const vol24 = coin.total_volume ?? 0;
-  const change24 = coin.price_change_percentage_24h ?? 0;
-
-  const ema9 = metrics?.ema9 ? metrics.ema9.toFixed(6) : '-';
-  const ema21 = metrics?.ema21 ? metrics.ema21.toFixed(6) : '-';
-  const rsi14 = metrics?.rsi14 ? metrics.rsi14.toFixed(2) : '-';
-  const volat = metrics?.volatility ? metrics.volatility.toFixed(5) : '-';
-
-  tr.innerHTML = `
-    <td style="min-width:180px">
-      <img src="${coin.image}" alt="" style="width:18px;vertical-align:middle;margin-right:8px;border-radius:3px" />
-      <b>${coin.symbol.toUpperCase()}</b> <span class="small"> ${coin.name}</span>
-    </td>
-    <td>$${price}</td>
-    <td>$${fmt(vol24)}</td>
-    <td>${(change24||0).toFixed(2)}%</td>
-    <td>${ema9}</td>
-    <td>${ema21}</td>
-    <td>${rsi14}</td>
-    <td>${volat}</td>
-    <td class="${opts?.sigClass || ''}">${opts?.signal || '-'}</td>
-  `;
-  tbody.appendChild(tr);
-}
-
-// wire
-runBtn.addEventListener('click', async ()=> {
-  tbody.innerHTML = '';
-  statusEl.textContent = '';
-  await analyze();
-});
-
-// run once on load
-// you can comment auto-run if you prefer manual
-// analyze();
-</script>
+    loadData();
+    setInterval(loadData, 5000); // refresh tiap 5 detik
+  </script>
 </body>
 </html>
